@@ -666,6 +666,8 @@ slate.Variants = (function() {
     this.singleOptionSelector = options.singleOptionSelector;
     this.originalSelectorId = options.originalSelectorId;
     this.enableHistoryState = options.enableHistoryState;
+    this.metadata = options.metadata;
+    this.cartdata = options.cartdata;
     this.currentVariant = this._getVariantFromOptions();
 
     $(this.singleOptionSelector, this.$container).on(
@@ -729,6 +731,85 @@ slate.Variants = (function() {
         });
       });
 
+      var variant_metadata = _.find(this.metadata.variants, function(variant) {
+        return _.isEqual(variant.id, found.id);
+      });
+      found.collections = this.metadata.collections;
+      found.product = {
+        id: this.metadata.id,
+        metafields: this.metadata.metafields
+      }
+      found.metafields = variant_metadata.metafields;
+      
+      found.limitMax = null;
+      found.collections.forEach(collection => {
+        if (collection.metafields.zeals.limitMax) {
+          if ((found.limitMax == null) || (found.limitMax > collection.metafields.zeals.limitMax)) {
+            found.limitMax = collection.metafields.zeals.limitMax;
+          }
+        }
+      });
+      if (found.product.metafields.zeals.limitMax) {
+        found.limitMax = found.product.metafields.zeals.limitMax;
+      }
+      if (found.metafields.zeals.limitMax) {
+        found.limitMax = found.metafields.zeals.limitMax;
+      }
+
+      found.optionsLimit = [];
+      this.product.options.forEach((option_name, index) => {
+        this.metadata.collections.forEach((collection) => {
+          if (collection.metafields.zeals.optionsLimit) {
+            var collection_optionLimit = _.find(collection.metafields.zeals.optionsLimit, (option_limit) => {
+              return option_limit[option_name] && option_limit[option_name] == found.options[index];
+            });
+            if (collection_optionLimit) {
+              found.optionsLimit.push({
+                name: option_name,
+                value: collection_optionLimit[option_name],
+                amountMax: collection_optionLimit.amountMax
+              });
+            }
+          }
+        });
+        if (this.metadata.metafields.zeals.optionsLimit) {
+          var product_optionLimit = _.find(this.metadata.metafields.zeals.optionsLimit, (option_limit) => {
+            return option_limit[option_name] && option_limit[option_name] == found.options[index];
+          });
+          if (product_optionLimit) {
+            var idx = -1;
+            found.optionsLimit.forEach((option_limit, index) => {
+              if (option_limit.name == option_name && option_limit.value == product_optionLimit[option_name]) {
+                option_limit.amountMax = product_optionLimit.amountMax;
+                idx = index;
+              }
+            });
+            if (idx == -1) {
+              found.optionsLimit.push({
+                name: option_name,
+                value: collection_optionLimit[option_name],
+                amountMax: collection_optionLimit.amountMax
+              });
+            }
+          }
+        }
+      });
+      found.optionsLimit.forEach((option_limit) => {
+        if ((found.limitMax == null) || (found.limitMax > option_limit.amountMax)) {
+          found.limitMax = option_limit.amountMax;
+        }
+      });
+      found.availableQty = found.limitMax;
+      found.optionsLimit.forEach((option_limit) => {
+        var items = _.filter(this.cartdata.variants, (variant) => {
+          return variant[option_limit.name] && variant[option_limit.name] == option_limit.value;
+        });
+        items.forEach((item) => {
+          found.availableQty -= item.quantity;
+        });
+      });
+      console.log(found);
+
       return found;
     },
 
@@ -751,13 +832,28 @@ slate.Variants = (function() {
       this._updateImages(variant);
       this._updatePrice(variant);
       this._updateSKU(variant);
+      this._updateLimitMax(variant);
       this.currentVariant = variant;
-
+      
       if (this.enableHistoryState) {
         this._updateHistoryState(variant);
       }
     },
 
+    _updateLimitMax: function(variant) {
+      var limit_max = variant.limitMax
+      var current_limit_max = this.currentVariant.limitMax
+
+      if (limit_max === current_limit_max) {
+        return;
+      }
+
+      this.$container.trigger({
+        type: 'variantLimitMaxChange',
+        variant: variant
+      });
+    },
+    
     /**
      * Trigger event when variant image changes
      *
@@ -5194,6 +5290,14 @@ theme.Cart = (function() {
       this.$container.addClass(classes.cartNoCookies);
     }
 
+    var sectionId = this.$container.attr('data-section-id');
+    if ($('#CartDataJson-' + sectionId).html()) {
+      this.cartDataObject = JSON.parse(
+        document.getElementById('CartDataJson-' + sectionId).innerHTML
+      );
+      console.log(this.cartDataObject);
+    }
+
     this.$thumbnails.css('cursor', 'pointer');
     this.$container.on(
       'click',
@@ -5283,7 +5387,30 @@ theme.Cart = (function() {
         return;
       }
 
-      if (isValidValue && this.ajaxEnabled) {
+      var key = $itemElement.attr(attributes.cartItemKey);
+      var cart_item = _.find(this.cartDataObject.items, (v) => {
+        return v.key == key;
+      });
+
+      var isOverQuantity = false;
+      var cart_item_available_qty = cart_item.availableQty;
+      if (cart_item_available_qty) {
+        isOverQuantity = value > (cart_item_available_qty + cart_item.quantity);
+        if (isOverQuantity) {
+          $(selectors.cartQuantityErrorMessage, $itemElement).text(
+            '購入可能数以上をカートに追加しようとしています'
+          );
+          $(selectors.cartQuantityErrorMessageWrapper, $itemElement).removeClass(
+            classes.hide
+          );
+          $(selectors.inputQty, $itemElement)
+            .addClass(classes.inputError)
+            .focus();
+          return;
+        }  
+      }
+
+      if (!isOverQuantity && isValidValue && this.ajaxEnabled) {
         this._updateItemQuantity(
           itemIndex,
           $itemElement,
@@ -5564,6 +5691,21 @@ theme.Cart = (function() {
     },
 
     _setQuantityInputs: function($item, item, index) {
+      var cart_item = _.find(this.cartDataObject.items, (v) => {
+        return v.key == item.key;
+      });
+      var limit_max = cart_item.limitMax;
+      if (limit_max) {
+        $(selectors.quantityInputMobile, $item).children().remove();
+        [...Array(limit_max + 1)].map((_, i) => {
+          $(selectors.quantityInputMobile, $item).append($('<option>').attr({value:i}).text(i));
+        });
+        $(selectors.quantityInputDesktop, $item).children().remove();
+        [...Array(limit_max + 1)].map((_, i) => {
+          $(selectors.quantityInputDesktop, $item).append($('<option>').attr({value:i}).text(i));
+        });
+      }
+
       $(selectors.quantityInputMobile, $item)
         .attr('id', 'updates_' + item.key)
         .attr(attributes.quantityItem, index + 1)
@@ -6344,6 +6486,18 @@ theme.Product = (function() {
       document.getElementById('ProductJson-' + sectionId).innerHTML
     );
 
+    if ($('#MetaDataJson-' + sectionId).html()) {
+      this.productMetaDataObject = JSON.parse(
+        document.getElementById('MetaDataJson-' + sectionId).innerHTML
+      );
+    }
+
+    if ($('#CartDataJson-' + sectionId).html()) {
+      this.productCartDataObject = JSON.parse(
+        document.getElementById('CartDataJson-' + sectionId).innerHTML
+      );
+    }
+
     this.settings.zoomEnabled = $(this.selectors.imageZoomWrapper).hasClass(
       this.classes.jsZoomEnabled
     );
@@ -6411,7 +6565,9 @@ theme.Product = (function() {
           this.$container.data('enable-history-state') || false,
         singleOptionSelector: this.selectors.singleOptionSelector,
         originalSelectorId: this.selectors.originalSelectorId,
-        product: this.productSingleObject
+        product: this.productSingleObject,
+        metadata: this.productMetaDataObject,
+        cartdata: this.productCartDataObject
       };
 
       this.variants = new slate.Variants(options);
@@ -6431,6 +6587,10 @@ theme.Product = (function() {
       this.$container.on(
         'variantSKUChange' + this.settings.namespace,
         this._updateSKU.bind(this)
+      );
+      this.$container.on(
+        'variantLimitMaxChange' + this.settings.namespace,
+        this._updateLimitMax.bind(this)
       );
     },
 
@@ -6476,7 +6636,17 @@ theme.Product = (function() {
             return;
           }
 
-          if (!isInvalidQuantity && this.ajaxEnabled) {
+          var isOverQuantity = false;
+          var available_qty = this.variants.currentVariant.availableQty;
+          if (available_qty) {
+            isOverQuantity = parseInt(this.$quantityInput.val()) > available_qty;
+            if (isOverQuantity) {
+              this._showErrorMessage('購入可能数以上をカートに追加しようとしています');
+              return;
+            }
+          }
+
+          if (!isOverQuantity && !isInvalidQuantity && this.ajaxEnabled) {
             // disable the addToCart and dynamic checkout button while
             // request/cart popup is loading and handle loading state
             this._handleButtonLoadingState(true);
@@ -6532,6 +6702,25 @@ theme.Product = (function() {
           function(item) {
             this._hideErrorMessage();
             this._setupCartPopup(item);
+
+            var available_qty = this.variants.currentVariant.availableQty;
+            if (available_qty && available_qty <= item.quantity) {
+              // Variant is sold out, disable submit button and change the text.
+              this.$addToCart.attr('disabled', true);
+              this.$addToCart
+              .attr('aria-disabled', true)
+              .attr('aria-label', theme.strings.soldOut);
+              $(this.selectors.addToCartText, this.$container).text(
+                theme.strings.soldOut
+              );
+              $(this.selectors.productForm, this.container).addClass(
+                this.classes.variantSoldOut
+              );
+              // $(this.selectors.priceContainer, this.$container).addClass(
+              //   this.classes.productSoldOut
+              // );
+            }
+
           }.bind(this)
         )
         .fail(
@@ -6634,6 +6823,21 @@ theme.Product = (function() {
           this._setCartQuantity(cart.item_count);
           this._setCartCountBubble(cart.item_count);
           this._showCartPopup();
+
+          var new_cart_data = cart.items.map((cart_item) => {
+            if (cart_item.product_id == this.productCartDataObject.id) {
+              var result = {
+                id: cart_item.id,
+                quantity: cart_item.quantity
+              };
+              cart_item.options_with_values.forEach((option) => {
+                result[option.name] = option.value;
+              });
+              return result;
+            }
+          }).filter(Boolean);
+          this.productCartDataObject.variants = new_cart_data;
+  
         }.bind(this)
       );
     },
@@ -7018,7 +7222,13 @@ theme.Product = (function() {
       var variant = evt.variant;
 
       if (variant) {
-        if (variant.available) {
+        var available = variant.available;
+        if (variant.availableQty && variant.availableQty <= 0) {
+          available = false;
+        }
+
+        if (available) {
+          this.$addToCart.removeAttr('disabled');
           this.$addToCart
             .removeAttr('aria-disabled')
             .attr('aria-label', theme.strings.addToCart);
@@ -7030,6 +7240,7 @@ theme.Product = (function() {
           );
         } else {
           // Variant is sold out, disable submit button and change the text.
+          this.$addToCart.attr('disabled', true);
           this.$addToCart
             .attr('aria-disabled', true)
             .attr('aria-label', theme.strings.soldOut);
@@ -7042,6 +7253,7 @@ theme.Product = (function() {
         }
       } else {
         // The variant doesn't exist, disable submit button and change the text.
+        this.$addToCart.attr('disabled', true);
         this.$addToCart
           .attr('aria-disabled', true)
           .attr('aria-label', theme.strings.unavailable);
@@ -7057,13 +7269,29 @@ theme.Product = (function() {
     _updateAvailability: function(evt) {
       // remove error message if one is showing
       this._hideErrorMessage();
-
       // update form submit
       this._updateAddToCart(evt);
       // update live region
       this._updateLiveRegion(evt);
-
+      // update price
       this._updatePrice(evt);
+      // update limit max
+      this._updateLimitMax(evt);
+    },
+
+    _updateLimitMax: function(evt) {
+      var variant = evt.variant;
+      var quantity = this.$quantityInput.val();
+      var limit_max = variant.limitMax;
+      if (limit_max) {
+        this.$quantityInput.children().remove();
+        [...Array(limit_max)].map((_, i) => {
+          this.$quantityInput.append($('<option>').attr({value:i+1}).text(i+1));
+        });
+        if (quantity > limit_max) {
+          this.$quantityInput.val(limit_max);
+        }
+      }
     },
 
     _updateMedia: function(evt) {

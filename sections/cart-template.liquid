@@ -17,7 +17,134 @@
           <th class="text-right small--hide" scope="col">{{ 'cart.label.total' | t }}</th>
         </thead>
         <tbody data-cart-line-items>
+
+{%- assign limit_max_array = '' | split: '' -%}
+{%- assign available_qty_array = '' | split: '' -%}
+
           {%- for item in cart.items -%}
+
+{%- assign cart_index = forloop.index0 -%}
+
+{%- assign limit_max = nil -%}
+{%- assign available_qty = nil  -%}
+{%- assign collection_option_limit_name = nil -%}
+{%- assign collection_option_limit_value = nil -%}
+{%- assign collection_option_limit_amountMax = nil -%}
+{%- assign product_option_limit_name = nil -%}
+{%- assign product_option_limit_value = nil -%}
+{%- assign product_option_limit_amountMax = nil -%}
+{%- assign option_limit_name = nil -%}
+{%- assign option_limit_value = nil -%}
+{%- assign option_limit_amountMax = nil -%}
+
+{%- for collection in item.product.collections -%}
+  {%- if collection.metafields.zeals.limitMax -%}
+    {%- unless limit_max -%}
+      {%- assign limit_max = collection.metafields.zeals.limitMax -%}
+    {%- elsif limit_max > collection.metafields.zeals.limitMax -%}
+      {%- assign limit_max = collection.metafields.zeals.limitMax -%}
+    {%- endunless -%}
+  {%- endif -%}
+{%- endfor -%}
+{%- if item.product.metafields.zeals.limitMax -%}
+  {%- assign limit_max = item.product.metafields.zeals.limitMax -%}
+{%- endif -%}
+{%- if item.variant.metafields.zeals.limitMax -%}
+  {%- assign limit_max = item.variant.metafields.zeals.limitMax -%}
+{%- endif -%}
+{%- if limit_max and limit_max < item.quantity -%}
+  {%- assign limit_max = item.quantity -%}
+{%- endif -%}
+
+{%- for option_name in item.product.options -%}
+  {%- assign option_index = forloop.index0 -%}
+  {%- for collection in item.product.collections -%}
+    {%- if collection.metafields.zeals.optionsLimit -%}
+      {%- for option_limit in collection.metafields.zeals.optionsLimit -%}
+        {%- if option_limit[option_name] == item.variant.options[option_index] -%}
+          {%- unless collection_option_limit_amountMax -%}
+            {%- assign collection_option_limit_name = option_name -%}
+            {%- assign collection_option_limit_value = option_limit[option_name] -%}
+            {%- assign collection_option_limit_amountMax = option_limit.amountMax -%}
+          {%- elsif collection_option_limit_amountMax > option_limit.amountMax -%}
+            {%- assign collection_option_limit_name = option_name -%}
+            {%- assign collection_option_limit_value = option_limit[option_name] -%}
+            {%- assign collection_option_limit_amountMax = option_limit.amountMax -%}
+          {%- endunless -%}
+          {%- break -%}
+        {%- endif -%}
+      {%- endfor -%}
+    {%- endif -%}
+  {%- endfor -%}
+  {%- if item.product.metafields.zeals.optionsLimit -%}
+    {%- for option_limit in item.product.metafields.zeals.optionsLimit -%}
+      {%- if option_limit[option_name] == item.variant.options[option_index] -%}
+          {%- unless product_option_limit_amountMax -%}
+            {%- assign product_option_limit_name = option_name -%}
+            {%- assign product_option_limit_value = option_limit[option_name] -%}
+            {%- assign product_option_limit_amountMax = option_limit.amountMax -%}
+          {%- elsif product_option_limit_amountMax > option_limit.amountMax -%}
+            {%- assign product_option_limit_name = option_name -%}
+            {%- assign product_option_limit_value = option_limit[option_name] -%}
+            {%- assign product_option_limit_amountMax = option_limit.amountMax -%}
+          {%- endunless -%}
+        {%- break -%}
+      {%- endif -%}
+    {%- endfor -%}
+  {%- endif -%}
+{%- endfor -%}
+{%- if product_option_limit_amountMax -%}
+  {%- assign option_limit_name = product_option_limit_name -%}
+  {%- assign option_limit_value = product_option_limit_value -%}
+  {%- assign option_limit_amountMax = product_option_limit_amountMax -%}
+{%- elsif collection_option_limit_amountMax -%}
+  {%- assign option_limit_name = collection_option_limit_name -%}
+  {%- assign option_limit_value = collection_option_limit_value -%}
+  {%- assign option_limit_amountMax = collection_option_limit_amountMax -%}
+{%- endif -%}
+
+{%- if option_limit_amountMax -%}
+  {%- unless limit_max -%}
+    {%- assign limit_max = option_limit_amountMax -%}
+  {%- elsif limit_max > option_limit_amountMax -%}
+    {%- assign limit_max = option_limit_amountMax -%}
+  {%- endunless -%}
+{%- endif -%}
+
+{%- if limit_max -%}
+  {%- assign available_qty = limit_max  -%}
+  {%- for line_item in cart.items -%}
+    {%- if line_item.product_id == item.product.id -%}
+      {%- for option in line_item.options_with_values -%}
+        {%- if option.name == option_limit_name and option.value == option_limit_value -%}
+          {%- assign available_qty = available_qty | minus: line_item.quantity  -%}
+        {%- endif -%}
+      {%- endfor -%}
+    {%- endif -%}
+  {%- endfor -%}
+  {%- if limit_max == available_qty -%}
+    {%- assign available_qty = available_qty | minus: item.quantity  -%}
+  {%- endif -%}
+{%- endif -%}
+{%- if item.variant.available == false -%}
+  {%- assign available_qty = 0  -%}
+{%- endif -%}
+
+{%- if limit_max -%}
+{%- assign temp_limit_max = limit_max | split: ',' -%}
+{%- else -%}
+{%- assign temp_limit_max = -1 | split: ',' -%}
+{%- endif -%}
+{%- assign limit_max_array = limit_max_array | concat: temp_limit_max -%}
+
+{%- if available_qty -%}
+{%- assign temp_available_qty = available_qty | split: ',' -%}
+{%- else -%}
+{%- assign temp_available_qty = -1 | split: ',' -%}
+{%- endif -%}
+{%- assign available_qty_array = available_qty_array | concat: temp_available_qty -%}
+
+
             <tr class="cart__row" data-cart-item data-cart-item-key="{{ item.key }}" data-cart-item-url="{{ item.url }}" data-cart-item-title="{{ item.title }}" data-cart-item-index="{{ forloop.index }}" data-cart-item-quantity="{{ item.quantity }}">
               <td class="cart__meta small--text-left" data-cart-table-cell>
                 <div class="cart__product-information">
@@ -168,9 +295,20 @@
                   <label for="updates_{{ item.key }}" class="cart__qty-label" aria-label="{{ 'cart.label.quantity' | t }}" data-quantity-label-mobile>
                     {{ 'cart.label.qty' | t }}
                   </label>
+                  {%- if limit_max -%}
+                    <select id="updates_{{ item.key }}" class="cart__qty-input" type="number"
+                    value="{{ item.quantity }}" min="0" pattern="[0-9]*" max="{{ limit_max }}"
+                    data-quantity-input data-quantity-item="{{ forloop.index }}" data-quantity-input-mobile
+                    >
+                    {% for i in (0..limit_max) %}
+                      <option value="{{ i }}" {% if i == item.quantity %}selected="selected"{% endif %}>{{ i }}</option>
+                    {% endfor %}
+                    </select>
+                  {%- else -%}
                   <input id="updates_{{ item.key }}" class="cart__qty-input" type="number"
                     value="{{ item.quantity }}" min="0" pattern="[0-9]*"
                     data-quantity-input data-quantity-item="{{ forloop.index }}" data-quantity-input-mobile>
+                  {%- endif -%}
                 </div>
                 <div class="cart__qty-error-message-wrapper cart__qty-error-message-wrapper--mobile hide" role="alert" data-cart-quantity-error-message-wrapper>
                   <span class="visually-hidden">{{ 'general.accessibility.error' | t }} </span>
@@ -181,9 +319,20 @@
               <td class="cart__quantity-td text-right small--hide">
                 <div class="cart__qty">
                   <label for="updates_large_{{ item.key }}" class="cart__qty-label" data-quantity-label-desktop>{{ 'cart.label.quantity' | t }}</label>
+                  {%- if limit_max -%}
+                    <select id="updates_large_{{ item.key }}" class="cart__qty-input"
+                    name="updates[]" value="{{ item.quantity }}" min="0" pattern="[0-9]*" max="{{ limit_max }}"
+                    data-quantity-input data-quantity-item="{{ forloop.index }}" data-quantity-input-desktop
+                    >
+                    {% for i in (0..limit_max) %}
+                      <option value="{{ i }}" {% if i == item.quantity %}selected="selected"{% endif %}>{{ i }}</option>
+                    {% endfor %}
+                    </select>
+                  {%- else -%}
                   <input id="updates_large_{{ item.key }}" class="cart__qty-input" type="number"
                     name="updates[]" value="{{ item.quantity }}" min="0" pattern="[0-9]*"
                     data-quantity-input data-quantity-item="{{ forloop.index }}" data-quantity-input-desktop>
+                  {%- endif -%}
                 </div>
                 <div class="cart__qty-error-message-wrapper cart__qty-error-message-wrapper--desktop hide" role="alert" data-cart-quantity-error-message-wrapper>
                   <span class="visually-hidden">{{ 'general.accessibility.error' | t }} </span>
@@ -309,6 +458,57 @@
   </div>
 </div>
 
+{%- capture 'cart_data' -%}
+"itemCount":{{ cart.item_count }},
+"items":[
+{%- for line_item in cart.items -%}
+  {
+    "key":"{{ line_item.key }}",
+    "id":{{ line_item.variant_id }},
+    "quantity":{{ line_item.quantity }},
+    {%- for option in line_item.options_with_values %}
+    "{{ option.name }}":"{{ option.value }}",
+    {%- endfor %}
+    {%- assign limit_max_value = limit_max_array[forloop.index0] | plus: 0 -%}
+    {%- if limit_max_value >= 0 -%}
+    "limitMax":{{ limit_max_value }},
+    {%- endif -%}
+    {%- assign available_qty_value = available_qty_array[forloop.index0] | plus: 0 -%}
+    {%- if available_qty_value >= 0 -%}
+    "availableQty":{{ available_qty_value }},
+    {%- endif -%}
+    "product":{
+      "id":{{ line_item.product.id }},
+      "collections":[
+        {%- for collection in line_item.product.collections -%}
+        {
+          "id":{{ collection.id }},
+          "metafields":{
+            "zeals":{{ collection.metafields.zeals | json }}
+          }
+        }{%- unless forloop.last -%},{%- endunless -%}
+        {%- endfor -%}
+      ],
+      "metafields":{
+        "zeals":{{ line_item.product.metafields.zeals | json }}
+      }
+    },
+    "variant":{
+      "id":{{ line_item.variant.id }},
+      "metafields":{
+        "zeals":{{ line_item.variant.metafields.zeals | json }}
+      }
+    }
+  }
+  {%- unless forloop.last -%},{%- endunless -%}
+{%- endfor %}
+]
+{%- endcapture -%}
+<script type="application/json" id="CartDataJson-{{ section.id }}">
+{
+{{ cart_data }}
+}
+</script>
 
 
 {% schema %}

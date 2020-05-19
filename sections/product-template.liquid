@@ -139,11 +139,115 @@
             </div>
           {%- endif -%}
 
+
+{%- assign limit_max = nil -%}
+{%- assign available_qty = nil  -%}
+{%- assign collection_option_limit_name = nil -%}
+{%- assign collection_option_limit_value = nil -%}
+{%- assign collection_option_limit_amountMax = nil -%}
+{%- assign product_option_limit_name = nil -%}
+{%- assign product_option_limit_value = nil -%}
+{%- assign product_option_limit_amountMax = nil -%}
+{%- assign option_limit_name = nil -%}
+{%- assign option_limit_value = nil -%}
+{%- assign option_limit_amountMax = nil -%}
+
+{%- for collection in product.collections -%}
+  {%- if collection.metafields.zeals.limitMax -%}
+    {%- unless limit_max -%}
+      {%- assign limit_max = collection.metafields.zeals.limitMax -%}
+    {%- elsif limit_max > collection.metafields.zeals.limitMax -%}
+      {%- assign limit_max = collection.metafields.zeals.limitMax -%}
+    {%- endunless -%}
+  {%- endif -%}
+{%- endfor -%}
+{%- if product.metafields.zeals.limitMax -%}
+  {%- assign limit_max = product.metafields.zeals.limitMax -%}
+{%- endif -%}
+{%- if current_variant.metafields.zeals.limitMax -%}
+  {%- assign limit_max = current_variant.metafields.zeals.limitMax -%}
+{%- endif -%}
+
+{%- for option_name in product.options -%}
+  {%- assign option_index = forloop.index0 -%}
+  {%- for collection in product.collections -%}
+    {%- if collection.metafields.zeals.optionsLimit -%}
+      {%- for option_limit in collection.metafields.zeals.optionsLimit -%}
+        {%- if option_limit[option_name] == current_variant.options[option_index] -%}
+          {%- unless collection_option_limit_amountMax -%}
+            {%- assign collection_option_limit_name = option_name -%}
+            {%- assign collection_option_limit_value = option_limit[option_name] -%}
+            {%- assign collection_option_limit_amountMax = option_limit.amountMax -%}
+          {%- elsif collection_option_limit_amountMax > option_limit.amountMax -%}
+            {%- assign collection_option_limit_name = option_name -%}
+            {%- assign collection_option_limit_value = option_limit[option_name] -%}
+            {%- assign collection_option_limit_amountMax = option_limit.amountMax -%}
+          {%- endunless -%}
+          {%- break -%}
+        {%- endif -%}
+      {%- endfor -%}
+    {%- endif -%}
+  {%- endfor -%}
+  {%- if product.metafields.zeals.optionsLimit -%}
+    {%- for option_limit in product.metafields.zeals.optionsLimit -%}
+      {%- if option_limit[option_name] == current_variant.options[option_index] -%}
+          {%- unless product_option_limit_amountMax -%}
+            {%- assign product_option_limit_name = option_name -%}
+            {%- assign product_option_limit_value = option_limit[option_name] -%}
+            {%- assign product_option_limit_amountMax = option_limit.amountMax -%}
+          {%- elsif product_option_limit_amountMax > option_limit.amountMax -%}
+            {%- assign product_option_limit_name = option_name -%}
+            {%- assign product_option_limit_value = option_limit[option_name] -%}
+            {%- assign product_option_limit_amountMax = option_limit.amountMax -%}
+          {%- endunless -%}
+        {%- break -%}
+      {%- endif -%}
+    {%- endfor -%}
+  {%- endif -%}
+{%- endfor -%}
+{%- if product_option_limit_amountMax -%}
+  {%- assign option_limit_name = product_option_limit_name -%}
+  {%- assign option_limit_value = product_option_limit_value -%}
+  {%- assign option_limit_amountMax = product_option_limit_amountMax -%}
+{%- elsif collection_option_limit_amountMax -%}
+  {%- assign option_limit_name = collection_option_limit_name -%}
+  {%- assign option_limit_value = collection_option_limit_value -%}
+  {%- assign option_limit_amountMax = collection_option_limit_amountMax -%}
+{%- endif -%}
+{%- if option_limit_amountMax -%}
+  {%- unless limit_max -%}
+    {%- assign limit_max = option_limit_amountMax -%}
+  {%- elsif limit_max > option_limit_amountMax -%}
+    {%- assign limit_max = option_limit_amountMax -%}
+  {%- endunless -%}
+{%- endif -%}
+
+{%- if limit_max -%}
+  {%- assign available_qty = limit_max  -%}
+  {%- for line_item in cart.items -%}
+    {%- if line_item.product_id == product.id -%}
+      {%- for option in line_item.options_with_values -%}
+        {%- if option.name == option_limit_name and option.value == option_limit_value -%}
+          {%- assign available_qty = available_qty | minus: line_item.quantity  -%}
+        {%- endif -%}
+      {%- endfor -%}
+    {%- endif -%}
+  {%- endfor -%}
+{%- endif -%}
+{%- if current_variant.available == false -%}
+  {%- assign available_qty = 0  -%}
+{%- endif -%}
+
+
           {% capture "form_classes" -%}
             product-form product-form-{{ section.id }}
             {%- unless section.settings.show_variant_labels %} product-form--hide-variant-labels {% endunless %}
             {%- if section.settings.enable_payment_button and product.has_only_default_variant %} product-form--payment-button-no-variants {%- endif -%}
-            {%- if current_variant.available == false %} product-form--variant-sold-out {%- endif -%}
+            {%- if current_variant.available == false -%}
+            product-form--variant-sold-out
+            {%- elsif available_qty <= 0 and available_qty -%}
+            product-form--variant-sold-out 
+            {%- endunless -%}
           {%- endcapture %}
 
           {% form 'product', product, class:form_classes, novalidate: 'novalidate', data-product-form: '' %}
@@ -181,10 +285,20 @@
               <div class="product-form__controls-group">
                 <div class="product-form__item">
                   <label for="Quantity-{{ section.id }}">{{ 'products.product.quantity' | t }}</label>
+                  {%- if limit_max -%}
+                    <select name="quantity" id="Quantity-{{ section.id }}"
+                      class="product-form__input product-form__input--quantity" data-quantity-input
+                    >
+                    {% for i in (1..limit_max) %}
+                      <option value="{{ i }}">{{ i }}</option>
+                    {% endfor %}
+                    </select>
+                  {%- else -%}
                   <input type="number" id="Quantity-{{ section.id }}"
                     name="quantity" value="1" min="1" pattern="[0-9]*"
                     class="product-form__input product-form__input--quantity" data-quantity-input
                   >
+                  {%- endif -%}
                 </div>
               </div>
             {% endif %}
@@ -203,14 +317,27 @@
                 {%- if section.settings.enable_payment_button %} product-form__item--payment-button {%- endif -%}
                 {%- if product.has_only_default_variant %} product-form__item--no-variants {%- endif -%}"
               >
-                <button type="submit" name="add"
-                  {% unless current_variant.available %} aria-disabled="true"{% endunless %}
-                  aria-label="{% unless current_variant.available %}{{ 'products.product.sold_out' | t }}{% else %}{{ 'products.product.add_to_cart' | t }}{% endunless %}"
+                <button type="submit" name="add" 
+                  {% unless current_variant.available %} 
+                  aria-disabled="true"
+                  {% elsif available_qty <= 0 and available_qty %}
+                  aria-disabled="true"
+                  {% endunless %}
+                  aria-label="
+                  {% unless current_variant.available %}
+                  {{ 'products.product.sold_out' | t }}
+                  {% elsif available_qty <= 0 and available_qty %}
+                  {{ 'products.product.sold_out' | t }}
+                  {% else %}
+                  {{ 'products.product.add_to_cart' | t }}
+                  {% endunless %}"
                   class="btn product-form__cart-submit{% if section.settings.enable_payment_button %} btn--secondary-accent{% endif %}"
                   {% if settings.enable_ajax %}aria-haspopup="dialog"{% endif %}
                   data-add-to-cart>
                   <span data-add-to-cart-text>
                     {% unless current_variant.available %}
+                      {{ 'products.product.sold_out' | t }}
+                    {% elsif available_qty <= 0 and available_qty %}
                       {{ 'products.product.sold_out' | t }}
                     {% else %}
                       {{ 'products.product.add_to_cart' | t }}
@@ -264,6 +391,61 @@
   <script type="application/json" id="ModelJson-{{ section.id }}">
     {{ product.media | where: 'media_type', 'model' | json }}
   </script>
+  {%- capture 'meta_data' -%}
+    "id":{{ product.id }},
+    "collections":[
+      {%- for collection in product.collections -%}
+      {
+        "id":{{ collection.id }},
+        "metafields":{
+          "zeals":{{ collection.metafields.zeals | json }}
+        }
+      }{%- unless forloop.last -%},{%- endunless -%}
+      {%- endfor -%}
+    ],
+    "metafields":{
+      "zeals":{{ product.metafields.zeals | json }}
+    },
+    "variants":[
+      {%- for variant in product.variants %}
+      {
+        "id":{{ variant.id }},
+        "metafields":{
+          "zeals":{{ variant.metafields.zeals | json }}
+        }
+      }{%- unless forloop.last -%},{%- endunless -%}
+      {%- endfor %}
+    ]
+  {%- endcapture -%}
+  <script type="application/json" id="MetaDataJson-{{ section.id }}">
+    {
+    {{ meta_data }}
+    }
+  </script>
+  {%- capture 'cart_data' -%}
+    "id":{{ product.id }},
+    "variants":[
+    {%- for line_item in cart.items -%}
+      {%- if product.id == line_item.product_id -%}
+      {
+        "id":{{ line_item.variant_id }},
+        "quantity":{{ line_item.quantity }},
+        {%- for option in line_item.options_with_values %}
+        "{{ option.name }}":"{{ option.value }}"
+        {%- unless forloop.last -%},{%- endunless -%}
+        {%- endfor %}
+      }
+      {%- endif -%}
+      {%- unless forloop.last -%},{%- endunless -%}
+    {%- endfor %}
+    ]
+  {%- endcapture -%}
+  <script type="application/json" id="CartDataJson-{{ section.id }}">
+    {
+    {{ cart_data }}
+    }
+  </script>
+
 {% endunless %}
 
 
