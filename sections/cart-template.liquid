@@ -115,16 +115,17 @@
   {%- assign available_qty = limit_max  -%}
   {%- for line_item in cart.items -%}
     {%- if line_item.product_id == item.product.id -%}
-      {%- for option in line_item.options_with_values -%}
-        {%- if option.name == option_limit_name and option.value == option_limit_value -%}
-          {%- assign available_qty = available_qty | minus: line_item.quantity  -%}
-        {%- endif -%}
-      {%- endfor -%}
+      {%- if option_limit_name and option_limit_value -%}
+        {%- for option in line_item.options_with_values -%}
+          {%- if option.name == option_limit_name and option.value == option_limit_value -%}
+            {%- assign available_qty = available_qty | minus: line_item.quantity  -%}
+          {%- endif -%}
+        {%- endfor -%}
+      {%- elsif line_item.id == item.id -%}
+        {%- assign available_qty = available_qty | minus: item.quantity  -%}
+      {%- endif -%}
     {%- endif -%}
   {%- endfor -%}
-  {%- if limit_max == available_qty -%}
-    {%- assign available_qty = available_qty | minus: item.quantity  -%}
-  {%- endif -%}
 {%- endif -%}
 {%- if item.variant.available == false -%}
   {%- assign available_qty = 0  -%}
