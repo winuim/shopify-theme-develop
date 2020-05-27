@@ -800,14 +800,23 @@ slate.Variants = (function() {
         }
       });
       found.availableQty = found.limitMax;
-      found.optionsLimit.forEach((option_limit) => {
-        var items = _.filter(this.cartdata.variants, (variant) => {
-          return variant[option_limit.name] && variant[option_limit.name] == option_limit.value;
+      if (found.optionsLimit.length > 0) {
+        found.optionsLimit.forEach((option_limit) => {
+          var items = _.filter(this.cartdata.variants, (variant) => {
+            return variant[option_limit.name] && variant[option_limit.name] == option_limit.value;
+          });
+          items.forEach((item) => {
+            found.availableQty -= item.quantity;
+          });
+        });  
+      } else {
+        var item = _.find(this.cartdata.variants, (variant) => {
+          return variant.id == found.id;
         });
-        items.forEach((item) => {
+        if (item) {
           found.availableQty -= item.quantity;
-        });
-      });
+        }
+      }
       console.log(found);
 
       return found;
@@ -6490,12 +6499,14 @@ theme.Product = (function() {
       this.productMetaDataObject = JSON.parse(
         document.getElementById('MetaDataJson-' + sectionId).innerHTML
       );
+      console.log(this.productMetaDataObject);
     }
 
     if ($('#CartDataJson-' + sectionId).html()) {
       this.productCartDataObject = JSON.parse(
         document.getElementById('CartDataJson-' + sectionId).innerHTML
       );
+      console.log(this.productCartDataObject);
     }
 
     this.settings.zoomEnabled = $(this.selectors.imageZoomWrapper).hasClass(
