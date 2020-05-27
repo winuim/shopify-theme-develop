@@ -743,16 +743,16 @@ slate.Variants = (function() {
       
       found.limitMax = null;
       found.collections.forEach(collection => {
-        if (collection.metafields.zeals.limitMax) {
+        if (collection.metafields.zeals.limitMax !== undefined) {
           if ((found.limitMax == null) || (found.limitMax > collection.metafields.zeals.limitMax)) {
             found.limitMax = collection.metafields.zeals.limitMax;
           }
         }
       });
-      if (found.product.metafields.zeals.limitMax) {
+      if (found.product.metafields.zeals.limitMax !== undefined) {
         found.limitMax = found.product.metafields.zeals.limitMax;
       }
-      if (found.metafields.zeals.limitMax) {
+      if (found.metafields.zeals.limitMax !== undefined) {
         found.limitMax = found.metafields.zeals.limitMax;
       }
 
@@ -5403,7 +5403,7 @@ theme.Cart = (function() {
 
       var isOverQuantity = false;
       var cart_item_available_qty = cart_item.availableQty;
-      if (cart_item_available_qty) {
+      if (cart_item_available_qty !== null) {
         isOverQuantity = value > (cart_item_available_qty + cart_item.quantity);
         if (isOverQuantity) {
           $(selectors.cartQuantityErrorMessage, $itemElement).text(
@@ -6649,7 +6649,7 @@ theme.Product = (function() {
 
           var isOverQuantity = false;
           var available_qty = this.variants.currentVariant.availableQty;
-          if (available_qty) {
+          if (available_qty !== null) {
             isOverQuantity = parseInt(this.$quantityInput.val()) > available_qty;
             if (isOverQuantity) {
               this._showErrorMessage('購入可能数以上をカートに追加しようとしています');
@@ -6715,7 +6715,7 @@ theme.Product = (function() {
             this._setupCartPopup(item);
 
             var available_qty = this.variants.currentVariant.availableQty;
-            if (available_qty && available_qty <= item.quantity) {
+            if (available_qty !== null && available_qty <= item.quantity) {
               // Variant is sold out, disable submit button and change the text.
               this.$addToCart.attr('disabled', true);
               this.$addToCart
@@ -7234,7 +7234,7 @@ theme.Product = (function() {
 
       if (variant) {
         var available = variant.available;
-        if (variant.availableQty && variant.availableQty <= 0) {
+        if (variant.availableQty !== null && variant.availableQty <= 0) {
           available = false;
         }
 
